@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0] - 2026-09-12
+### Anadido
+- Escaneo de codigos de barras con la camara del movil (libreria @zxing/browser),
+  compatible con Safari/iOS tanto en el navegador como instalada como PWA.
+- Guia `docs/INSTALAR_IPHONE.md` con el paso a paso para anadir la app a la
+  pantalla de inicio en iPhone y activar el permiso de camara.
+
+### Cambiado
+- `app/page.tsx`: nuevo boton "Escanear con la camara" que abre un stream de
+  video, detecta el codigo automaticamente y lanza la comprobacion de origen.
+
 ## [0.2.0] - 2026-09-12
 ### Cambiado
 - Backend migrado de Supabase a Postgres generico (Neon) via `DATABASE_URL`,
