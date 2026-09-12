@@ -9,23 +9,27 @@ Evita revision de Apple y coste de cuenta de desarrollador.
 
 ## 3. Postgres generico (Neon) en vez de Supabase
 El autor ya tenia 2 proyectos Supabase activos en el limite del plan
-gratuito. Se opto por Neon (conectado el 12/09/2026) con un cliente `pg`
-estandar, sin usar ninguna API propietaria de Supabase.
+gratuito. Se opto por Neon con un cliente `pg` estandar.
 
 ## 4. Cache de 30 dias
 El origen no cambia cada dia; evita scraping excesivo.
 
 ## 5. Rojo vs naranja
-Desde octubre de 2025 hay normativa especifica para el etiquetado de
-productos del Sahara Occidental bajo control aduanero marroqui: se
-distinguen con colores distintos (rojo Marruecos, naranja Sahara).
+Distincion entre origen marroqui y Sahara Occidental por la normativa de
+etiquetado especifica desde octubre de 2025.
 
 ## 6. Por que no PythonAnywhere
 Su plan gratuito restringe peticiones salientes a una lista blanca de
-dominios, lo que romperia las llamadas a Open Food Facts y a los
-supermercados.
+dominios.
 
-## Pendiente
-- OCR real en produccion (placeholder Cloudflare Workers AI).
-- Endpoint `/api/reverify` con Vercel Cron.
-- Tests que avisen si el scraper deja de encontrar el origen.
+## 7. Por que no se puede anadir Family Cash
+Se comprobo directamente en familycash.es: la cadena no tiene tienda online
+ni catalogo de productos consultable, solo permite pedidos por telefono con
+recogida en tienda. Sin una ficha de producto web, no hay nada que scrapear.
+Si en el futuro abren tienda online, se puede anadir siguiendo el mismo
+patron que el resto de cadenas en `lib/sources/supermarketScraper.ts`.
+
+## 8. Deteccion de cadena vs deteccion de origen
+Son dos cosas distintas: la cadena donde se vende un producto no dice nada
+sobre si es de origen marroqui. La deteccion de cadena es solo informativa
+y nunca entra en el calculo del veredicto de origen.

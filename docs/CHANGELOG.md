@@ -1,29 +1,38 @@
 # Changelog
 
-## [0.3.0] - 2026-09-12
+## [0.4.0] - 2026-09-12
 ### Anadido
-- Escaneo de codigos de barras con la camara del movil (libreria @zxing/browser),
-  compatible con Safari/iOS tanto en el navegador como instalada como PWA.
-- Guia `docs/INSTALAR_IPHONE.md` con el paso a paso para anadir la app a la
-  pantalla de inicio en iPhone y activar el permiso de camara.
+- Deteccion automatica de cadena: se prueban Mercadona, Carrefour, Dia, Consum,
+  Alcampo, Eroski, Lidl y La Despensa en paralelo, sin que el usuario elija
+  cadena manualmente.
+- Deteccion de cadena por marca blanca conocida (`lib/brandMap.ts`), ej.
+  Hacendado -> Mercadona, Consum -> Consum, Milbona -> Lidl, etc.
+- Chip "Detectado en X" y "Tambien disponible en: ..." en el resultado.
 
 ### Cambiado
-- `app/page.tsx`: nuevo boton "Escanear con la camara" que abre un stream de
-  video, detecta el codigo automaticamente y lanza la comprobacion de origen.
+- Rediseno completo de la interfaz: tipografia de sistema, colores planos,
+  sin degradados ni tarjetas oscuras. Eliminado el selector manual de
+  supermercado.
+- `app/api/scan` ya no requiere el parametro `supermarket`; lo detecta solo.
+
+### Eliminado
+- Family Cash no se incluye en el escaneo automatico: no tiene tienda online
+  ni fichas de producto consultables (solo pedidos por telefono, verificado
+  en familycash.es), por lo que no hay nada que scrapear.
+
+## [0.3.1] - 2026-09-12
+### Corregido
+- `needsPhoto` se activa tambien cuando la unica evidencia es debil, no solo
+  cuando no hay ninguna.
+
+## [0.3.0] - 2026-09-12
+### Anadido
+- Escaneo de codigos de barras con la camara del movil.
 
 ## [0.2.0] - 2026-09-12
 ### Cambiado
-- Backend migrado de Supabase a Postgres generico (Neon) via `DATABASE_URL`,
-  para no tocar los 2 proyectos Supabase ya existentes del autor.
-- OCR ya no persiste la imagen en un bucket; se procesa en memoria.
-
-### Anadido
-- `docs/DECISIONES.md` con el razonamiento del cambio de base de datos.
+- Backend migrado de Supabase a Postgres generico (Neon).
 
 ## [0.1.0] - 2026-09-12
 ### Anadido
-- Estructura inicial Next.js (App Router) + TypeScript.
-- Motor de decision `originEngine.ts`.
-- Camino 1 (Open Food Facts), camino 2 (scraping), camino 3 (OCR).
-- Interfaz de escaneo PWA.
-- Documentacion inicial.
+- Estructura inicial del proyecto.

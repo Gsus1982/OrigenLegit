@@ -11,19 +11,20 @@ interface ScanResult {
   evidence: { source: string; rawText: string; countryCode: string; confidence: number };
   needsPhoto: boolean;
   fromCache: boolean;
+  detectedChain: string | null;
+  foundInChains: string[];
 }
 
 const VERDICT_LABEL: Record<Verdict, string> = {
   red: "Origen: Marruecos",
-  orange: "Origen dudoso / Sahara Occidental",
-  green: "Origen Espana / claro (no Marruecos)",
-  unknown: "Origen no verificable con los datos disponibles",
+  orange: "Origen dudoso o Sahara Occidental",
+  green: "Origen Espana u otro claro",
+  unknown: "Origen no verificable",
 };
 
 export default function HomePage() {
   const [barcode, setBarcode] = useState("");
   const [productName, setProductName] = useState("");
-  const [supermarket, setSupermarket] = useState("mercadona");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [photo, setPhoto] = useState<File | null>(null);
@@ -42,7 +43,7 @@ export default function HomePage() {
       const res = await fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ barcode: codeToUse, productName, supermarket }),
+        body: JSON.stringify({ barcode: codeToUse, productName }),
       });
       const data = await res.json();
       setResult(data);
@@ -62,7 +63,18 @@ export default function HomePage() {
       const data = await res.json();
       setResult((prev) =>
         prev
-          ? { ...prev, verdict: data.evidence.countryCode === "MA" ? "red" : data.evidence.countryCode === "EH" ? "orange" : data.evidence.countryCode === "ES" ? "green" : "unknown", needsPhoto: false }
+          ? {
+              ...prev,
+              verdict:
+                data.evidence.countryCode === "MA"
+                  ? "red"
+                  : data.evidence.countryCode === "EH"
+                  ? "orange"
+                  : data.evidence.countryCode === "ES"
+                  ? "green"
+                  : "unknown",
+              needsPhoto: false,
+            }
           : null
       );
     } finally {
@@ -78,7 +90,7 @@ export default function HomePage() {
     setCameraOpen(false);
   }
 
-  async function startCamera() {
+  function startCamera() {
     setCameraError(null);
     setCameraOpen(true);
   }
@@ -91,19 +103,15 @@ export default function HomePage() {
     let cancelled = false;
 
     reader
-      .decodeFromConstraints(
-        { video: { facingMode: "environment" } },
-        videoRef.current,
-        (result, err) => {
-          if (cancelled) return;
-          if (result) {
-            const text = result.getText();
-            setBarcode(text);
-            stopCamera();
-            handleScan(text);
-          }
+      .decodeFromConstraints({ video: { facingMode: "environment" } }, videoRef.current, (res) => {
+        if (cancelled) return;
+        if (res) {
+          const text = res.getText();
+          setBarcode(text);
+          stopCamera();
+          handleScan(text);
         }
-      )
+      })
       .catch((err) => {
         if (!cancelled) setCameraError("No se pudo acceder a la camara: " + err.message);
       });
@@ -116,56 +124,61 @@ export default function HomePage() {
 
   return (
     <main className="container">
-      <h1>OrigenLegit</h1>
-      <p className="badge">Comprueba el origen real de un producto antes de comprarlo.</p>
+      <h1 className="title">OrigenLegit</h1>
+      <p className="subtitle">Comprueba el origen real de un producto antes de comprarlo.</p>
 
-      <div className="card">
-        <button onClick={startCamera} disabled={cameraOpen}>
+      {!cameraOpen && (
+        <button className="btn-primary" onClick={startCamera}>
           Escanear con la camara
         </button>
+      )}
 
-        {cameraOpen && (
-          <div style={{ marginTop: 12 }}>
-            <video ref={videoRef} style={{ width: "100%", borderRadius: 12 }} muted playsInline />
-            {cameraError && <p className="badge" style={{ color: "#ef4444" }}>{cameraError}</p>}
-            <button onClick={stopCamera} style={{ background: "#334155", color: "#f1f5f9" }}>
-              Cancelar
-            </button>
-          </div>
-        )}
+      {cameraOpen && (
+        <div>
+          <video ref={videoRef} muted playsInline />
+          {cameraError && <p className="error-text">{cameraError}</p>}
+          <button className="btn-secondary" onClick={stopCamera}>
+            Cancelar
+          </button>
+        </div>
+      )}
 
-        <label>O escribe el codigo de barras</label>
+      <div className="divider">o manualmente</div>
+
+      <div className="field">
+        <label>Codigo de barras</label>
         <input value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="8412345678901" />
-
-        <label>Nombre del producto (opcional, mejora el scraping)</label>
-        <input value={productName} onChange={(e) => setProductName(e.target.value)} placeholder="Ej. Filetes de anchoa Hacendado" />
-
-        <label>Supermercado</label>
-        <select value={supermarket} onChange={(e) => setSupermarket(e.target.value)} style={{ width: "100%", padding: 12, marginTop: 8 }}>
-          <option value="mercadona">Mercadona</option>
-          <option value="carrefour">Carrefour</option>
-          <option value="dia">Dia</option>
-        </select>
-
-        <button onClick={() => handleScan()} disabled={loading || !barcode}>
-          {loading ? "Comprobando..." : "Comprobar origen"}
-        </button>
       </div>
 
+      <div className="field">
+        <label>Nombre del producto (opcional, mejora la busqueda)</label>
+        <input value={productName} onChange={(e) => setProductName(e.target.value)} placeholder="Ej. queso semicurado" />
+      </div>
+
+      <button className="btn-primary" onClick={() => handleScan()} disabled={loading || !barcode}>
+        {loading ? "Comprobando..." : "Comprobar origen"}
+      </button>
+
       {result && (
-        <div className={`card verdict-${result.verdict}`}>
-          <strong>{VERDICT_LABEL[result.verdict]}</strong>
-          <p className="badge">
-            Fuente: {result.evidence.source} - Confianza: {Math.round(result.evidence.confidence * 100)}%
+        <div className="result">
+          <span className={`pill pill-${result.verdict}`}>{result.verdict === "unknown" ? "Sin datos" : result.verdict}</span>
+          <p className="result-verdict">{VERDICT_LABEL[result.verdict]}</p>
+          <p className="meta">
+            Fuente: {result.evidence.source} · Confianza {Math.round(result.evidence.confidence * 100)}%
           </p>
-          {result.evidence.rawText && <p>&quot;{result.evidence.rawText}&quot;</p>}
+          {result.evidence.rawText && <p className="quote">{result.evidence.rawText}</p>}
+
+          {result.detectedChain && <p className="chain-tag">Detectado en {result.detectedChain}</p>}
+          {result.foundInChains && result.foundInChains.length > 1 && (
+            <p className="chain-tag">También disponible en: {result.foundInChains.join(", ")}</p>
+          )}
 
           {result.needsPhoto && (
-            <div>
-              <p className="badge">No encontramos el origen online. Haz una foto al reverso del envase:</p>
+            <div style={{ marginTop: 14 }}>
+              <p className="meta">No hay suficiente informacion online. Haz una foto al reverso del envase:</p>
               <input type="file" accept="image/*" capture="environment" onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
-              <button onClick={handlePhotoUpload} disabled={!photo || loading}>
-                Analizar foto (OCR)
+              <button className="btn-secondary" onClick={handlePhotoUpload} disabled={!photo || loading}>
+                Analizar foto
               </button>
             </div>
           )}
