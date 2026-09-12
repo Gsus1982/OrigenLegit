@@ -1,4 +1,8 @@
 // app/api/scan/route.ts
+// Fix v0.6.1: la respuesta de cache ahora reconstruye correctamente el
+// objeto "evidence" anidado (antes devolvia las columnas planas de la BD
+// y el frontend crasheaba al leer result.evidence.countryCode sobre un
+// objeto sin esa propiedad).
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
 import { fetchFromOpenFoodFacts } from "@/lib/sources/openFoodFacts";
@@ -10,7 +14,7 @@ function toVerdict(countryCode: string, confidence: number): string {
   if (confidence === 0) return "unknown";
   if (countryCode === "MA") return "red";
   if (countryCode === "EH") return "orange";
-  if (countryCode === "ES") return "green";
+  if (countryCode === "ES" || countryCode === "OTHER") return "green";
   return "unknown";
 }
 
@@ -25,6 +29,23 @@ export async function POST(req: NextRequest) {
   const cachedRes = await pool.query(`select * from product_verdicts where barcode = $1 limit 1`, [barcode]);
   const cached = cachedRes.rows[0];
   const cacheIsFresh = cached && Date.now() - new Date(cached.evidence_at).getTime() < 30 * 24 * 60 * 60 * 1000;
+
+  if (cacheIsFresh && Number(cached.confidence) >= 0.5) {
+    return NextResponse.json({
+      barcode,
+      verdict: cached.verdict,
+      evidence: {
+        source: cached.source,
+        rawText: cached.raw_text,
+        countryCode: cached.country_code,
+        confidence: Number(cached.confidence),
+      },
+      needsPhoto: false,
+      fromCache: true,
+      detectedChain: cached.supermarket ?? null,
+      foundInChains: [],
+    });
+  }
 
   const evidences: Evidence[] = [];
   let detectedChain: string | null = null;
@@ -45,10 +66,6 @@ export async function POST(req: NextRequest) {
   }
 
   let foundInChains: string[] = [];
-  if (cacheIsFresh && cached.confidence >= 0.5) {
-    return NextResponse.json({ ...cached, fromCache: true, needsPhoto: false, detectedChain, foundInChains });
-  }
-
   if ((!offEvidence || offEvidence.confidence < 0.8) && searchName) {
     const { best, foundIn } = await scrapeAllSupermarkets(searchName).catch(() => ({ best: null, foundIn: [] }));
     foundInChains = foundIn.map((c) => c.label);

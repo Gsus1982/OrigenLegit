@@ -1,9 +1,14 @@
 // lib/sources/supermarketScraper.ts
-// Escaneo automatico de varias cadenas: se prueban todas y se usa la primera
-// que encuentre una mencion de origen. No requiere que el usuario elija cadena.
+// Escaneo automatico de varias cadenas. IMPORTANTE (fix v0.6.1): ya NO se
+// hace fallback de busqueda sobre el body completo de la pagina. Si no se
+// encuentra el selector especifico de ficha de producto, se descarta sin
+// evidencia, en vez de arriesgar un falso positivo con texto generico de la
+// pagina (pie de pagina, avisos legales, direcciones de empresa, etc).
+// Este fallback causo un caso real: un producto de Marruecos fue marcado
+// como "Origen: Espana" por un texto ajeno al producto en una pagina de
+// busqueda de La Despensa.
 //
-// Family Cash queda fuera: no tiene tienda online ni fichas de producto
-// consultables, solo pedido telefonico (comprobado en su web oficial).
+// Family Cash queda fuera: no tiene tienda online.
 
 import * as cheerio from "cheerio";
 import { buildEvidence, Evidence } from "../originEngine";
@@ -27,6 +32,9 @@ export const SUPERMARKETS: ChainConfig[] = [
 
 const ORIGIN_LINE_REGEX = /(origen|elaborado en|envasado en|pa[ii]s de origen)[:\s]+([^.\n|]+)/i;
 
+const PRODUCT_SELECTORS =
+  "[data-testid='product-description'], .product-description, .ficha-producto, .pdp-description, [data-testid='product-detail'], .product-detail__description";
+
 async function fetchHtml(url: string): Promise<string> {
   const res = await fetch(url, {
     headers: { "User-Agent": "OrigenLegit/1.0 (+https://tudominio.es/bot-info)", "Accept-Language": "es-ES" },
@@ -39,14 +47,13 @@ async function fetchHtml(url: string): Promise<string> {
 async function scrapeOne(chain: ChainConfig, productName: string): Promise<{ chain: ChainConfig; evidence: Evidence } | null> {
   const html = await fetchHtml(chain.searchUrl(productName));
   const $ = cheerio.load(html);
-  const candidateText = $(
-    "[data-testid='product-description'], .product-description, .ficha-producto, .pdp-description"
-  )
-    .text()
-    .trim();
-  const fullText = candidateText || $("body").text();
-  const match = fullText.match(ORIGIN_LINE_REGEX);
+
+  const candidateText = $(PRODUCT_SELECTORS).text().trim();
+  if (!candidateText) return null;
+
+  const match = candidateText.match(ORIGIN_LINE_REGEX);
   if (!match) return null;
+
   const originPhrase = `${match[1]}: ${match[2]}`.trim();
   return { chain, evidence: buildEvidence("scrape", originPhrase) };
 }
