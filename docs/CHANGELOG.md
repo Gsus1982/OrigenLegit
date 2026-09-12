@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0] - 2026-09-12
+### Corregido
+- Bug critico: origenes reales detectados con alta confianza que no eran
+  Espana, Marruecos ni Sahara Occidental (ej. "Origen: Argentina") se
+  clasificaban como "no verificable". Ahora se reconocen como origen
+  confirmado (verde) y se muestra el pais real detectado.
+
+### Anadido
+- Historial local de escaneos (ultimos 20, guardado en el propio navegador,
+  sin backend adicional). Permite volver a consultar sin re-escanear.
+- Boton "Compartir" en el resultado (Web Share API con fallback a copiar
+  al portapapeles).
+- Mensaje de progreso real durante la comprobacion ("Consultando 8
+  supermercados en paralelo...") en vez de un generico "Comprobando...".
+- Modo oscuro automatico via `prefers-color-scheme`, con la misma paleta
+  plana (sin gradientes).
+- Icono de la PWA (`public/icon.svg`) para sustituir la captura generica en
+  la pantalla de inicio.
+
 ## [0.4.0] - 2026-09-12
 ### Anadido
 - Deteccion automatica de cadena: se prueban Mercadona, Carrefour, Dia, Consum,

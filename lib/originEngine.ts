@@ -9,12 +9,14 @@ export interface Evidence {
   source: Source;
   rawText: string;
   countryCode: string;
+  countryLabel?: string;
   confidence: number;
 }
 
 const MOROCCO_REGEX = /marruecos|maroc|morocco|\bma\b/i;
 const SAHARA_REGEX = /sahara occidental|western sahara|\beh\b|dakhla|laayoune|el aai[uu]n/i;
 const SPAIN_REGEX = /espa[nn]a|spain|\bes\b/i;
+const GENERIC_COUNTRY_REGEX = /(?:origen|elaborado en|envasado en|pa[ii]s de origen)[:\s]+([a-zA-ZÀ-ÿ\s]{3,40})/i;
 
 const SOURCE_BASE_CONFIDENCE: Record<Source, number> = {
   scrape: 0.9,
@@ -23,22 +25,25 @@ const SOURCE_BASE_CONFIDENCE: Record<Source, number> = {
   barcode_prefix: 0.25,
 };
 
-export function classifyText(text: string): { countryCode: string; verdict: Verdict } {
+export function classifyText(text: string): { countryCode: string; countryLabel?: string; verdict: Verdict } {
   if (!text) return { countryCode: "UNKNOWN", verdict: "unknown" };
   if (SAHARA_REGEX.test(text)) return { countryCode: "EH", verdict: "orange" };
   if (MOROCCO_REGEX.test(text)) return { countryCode: "MA", verdict: "red" };
   if (SPAIN_REGEX.test(text)) return { countryCode: "ES", verdict: "green" };
-  return { countryCode: "UNKNOWN", verdict: "unknown" };
+
+  const match = text.match(GENERIC_COUNTRY_REGEX);
+  const countryLabel = match ? match[1].trim() : undefined;
+  return { countryCode: "OTHER", countryLabel, verdict: "green" };
 }
 
 export function buildEvidence(source: Source, rawText: string): Evidence {
-  const { countryCode, verdict } = classifyText(rawText);
+  const { countryCode, countryLabel, verdict } = classifyText(rawText);
   const confidence = SOURCE_BASE_CONFIDENCE[source];
 
   if (source === "barcode_prefix" && verdict === "red") {
     return { source, rawText, countryCode, confidence: 0.2 };
   }
-  return { source, rawText, countryCode, confidence };
+  return { source, rawText, countryCode, countryLabel, confidence };
 }
 
 export function resolveVerdict(evidences: Evidence[]): Evidence {

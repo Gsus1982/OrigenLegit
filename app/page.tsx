@@ -5,49 +5,110 @@ import { BrowserMultiFormatReader } from "@zxing/browser";
 
 type Verdict = "red" | "orange" | "green" | "unknown";
 
+interface Evidence {
+  source: string;
+  rawText: string;
+  countryCode: string;
+  countryLabel?: string;
+  confidence: number;
+}
+
 interface ScanResult {
   barcode: string;
   verdict: Verdict;
-  evidence: { source: string; rawText: string; countryCode: string; confidence: number };
+  evidence: Evidence;
   needsPhoto: boolean;
   fromCache: boolean;
   detectedChain: string | null;
   foundInChains: string[];
 }
 
-const VERDICT_LABEL: Record<Verdict, string> = {
-  red: "Origen: Marruecos",
-  orange: "Origen dudoso o Sahara Occidental",
-  green: "Origen Espana u otro claro",
-  unknown: "Origen no verificable",
-};
+interface HistoryItem {
+  barcode: string;
+  productName: string;
+  verdict: Verdict;
+  chain: string | null;
+  timestamp: number;
+}
+
+const HISTORY_KEY = "origenlegit_history";
+const MAX_HISTORY = 20;
+
+function verdictTitle(result: ScanResult): string {
+  if (result.verdict === "red") return "Origen: Marruecos";
+  if (result.verdict === "orange") return "Origen dudoso o Sahara Occidental";
+  if (result.verdict === "green") {
+    if (result.evidence.countryCode === "OTHER" && result.evidence.countryLabel) {
+      return `Origen: ${result.evidence.countryLabel} (no es Marruecos)`;
+    }
+    return "Origen: Espana u otro confirmado";
+  }
+  return "Origen no verificable";
+}
+
+function loadHistory(): HistoryItem[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(items: HistoryItem[]) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(items.slice(0, MAX_HISTORY)));
+}
 
 export default function HomePage() {
   const [barcode, setBarcode] = useState("");
   const [productName, setProductName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState("Comprobando...");
   const [result, setResult] = useState<ScanResult | null>(null);
   const [photo, setPhoto] = useState<File | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
 
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
 
+  useEffect(() => {
+    setHistory(loadHistory());
+  }, []);
+
+  function pushHistory(r: ScanResult) {
+    const item: HistoryItem = {
+      barcode: r.barcode,
+      productName: productName || r.barcode,
+      verdict: r.verdict,
+      chain: r.detectedChain,
+      timestamp: Date.now(),
+    };
+    const next = [item, ...history.filter((h) => h.barcode !== r.barcode)].slice(0, MAX_HISTORY);
+    setHistory(next);
+    saveHistory(next);
+  }
+
   async function handleScan(codeOverride?: string) {
     const codeToUse = codeOverride ?? barcode;
     if (!codeToUse) return;
     setLoading(true);
+    setLoadingLabel("Consultando Open Food Facts...");
     setResult(null);
+    const t = setTimeout(() => setLoadingLabel("Consultando 8 supermercados en paralelo..."), 900);
     try {
       const res = await fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ barcode: codeToUse, productName }),
       });
-      const data = await res.json();
+      const data: ScanResult = await res.json();
       setResult(data);
+      pushHistory(data);
     } finally {
+      clearTimeout(t);
       setLoading(false);
     }
   }
@@ -55,6 +116,7 @@ export default function HomePage() {
   async function handlePhotoUpload() {
     if (!photo) return;
     setLoading(true);
+    setLoadingLabel("Analizando foto...");
     try {
       const formData = new FormData();
       formData.append("image", photo);
@@ -65,12 +127,13 @@ export default function HomePage() {
         prev
           ? {
               ...prev,
+              evidence: data.evidence,
               verdict:
                 data.evidence.countryCode === "MA"
                   ? "red"
                   : data.evidence.countryCode === "EH"
                   ? "orange"
-                  : data.evidence.countryCode === "ES"
+                  : data.evidence.countryCode === "ES" || data.evidence.countryCode === "OTHER"
                   ? "green"
                   : "unknown",
               needsPhoto: false,
@@ -93,6 +156,28 @@ export default function HomePage() {
   function startCamera() {
     setCameraError(null);
     setCameraOpen(true);
+  }
+
+  async function handleShare() {
+    if (!result) return;
+    const text = `OrigenLegit — ${verdictTitle(result)}\nCodigo: ${result.barcode}\nFuente: ${result.evidence.source} (confianza ${Math.round(result.evidence.confidence * 100)}%)`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ text });
+      } catch {
+        /* usuario cancelo */
+      }
+    } else {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    }
+  }
+
+  function loadFromHistory(item: HistoryItem) {
+    setBarcode(item.barcode);
+    setProductName(item.productName === item.barcode ? "" : item.productName);
+    handleScan(item.barcode);
   }
 
   useEffect(() => {
@@ -156,13 +241,15 @@ export default function HomePage() {
       </div>
 
       <button className="btn-primary" onClick={() => handleScan()} disabled={loading || !barcode}>
-        {loading ? "Comprobando..." : "Comprobar origen"}
+        {loading ? loadingLabel : "Comprobar origen"}
       </button>
 
       {result && (
         <div className="result">
-          <span className={`pill pill-${result.verdict}`}>{result.verdict === "unknown" ? "Sin datos" : result.verdict}</span>
-          <p className="result-verdict">{VERDICT_LABEL[result.verdict]}</p>
+          <span className={`pill pill-${result.verdict}`}>
+            {result.verdict === "unknown" ? "Sin datos" : result.verdict === "green" ? "Confirmado" : result.verdict}
+          </span>
+          <p className="result-verdict">{verdictTitle(result)}</p>
           <p className="meta">
             Fuente: {result.evidence.source} · Confianza {Math.round(result.evidence.confidence * 100)}%
           </p>
@@ -170,8 +257,14 @@ export default function HomePage() {
 
           {result.detectedChain && <p className="chain-tag">Detectado en {result.detectedChain}</p>}
           {result.foundInChains && result.foundInChains.length > 1 && (
-            <p className="chain-tag">También disponible en: {result.foundInChains.join(", ")}</p>
+            <p className="chain-tag">Tambien disponible en: {result.foundInChains.join(", ")}</p>
           )}
+
+          <div className="result-actions">
+            <button className="btn-secondary" onClick={handleShare}>
+              {copied ? "Copiado" : "Compartir"}
+            </button>
+          </div>
 
           {result.needsPhoto && (
             <div style={{ marginTop: 14 }}>
@@ -182,6 +275,22 @@ export default function HomePage() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {history.length > 0 && (
+        <div className="history">
+          <p className="history-title">Historial reciente</p>
+          {history.map((h) => (
+            <button key={h.barcode + h.timestamp} className="history-item" onClick={() => loadFromHistory(h)}>
+              <span>
+                <span className="h-name">{h.productName}</span>
+                <br />
+                <span className="h-code">{h.barcode}{h.chain ? ` · ${h.chain}` : ""}</span>
+              </span>
+              <span className={`history-dot dot-${h.verdict}`} />
+            </button>
+          ))}
         </div>
       )}
     </main>
