@@ -42,12 +42,19 @@ interface CartItem {
 const HISTORY_KEY = "origenlegit_history";
 const MAX_HISTORY = 20;
 
+function safeEvidence(result: ScanResult | null): Evidence {
+  return (
+    result?.evidence ?? { source: "desconocido", rawText: "", countryCode: "UNKNOWN", confidence: 0 }
+  );
+}
+
 function verdictTitle(result: ScanResult): string {
+  const ev = safeEvidence(result);
   if (result.verdict === "red") return "Origen: Marruecos";
   if (result.verdict === "orange") return "Origen dudoso o Sahara Occidental";
   if (result.verdict === "green") {
-    if (result.evidence.countryCode === "OTHER" && result.evidence.countryLabel) {
-      return `Origen: ${result.evidence.countryLabel} (no es Marruecos)`;
+    if (ev.countryCode === "OTHER" && ev.countryLabel) {
+      return `Origen: ${ev.countryLabel} (no es Marruecos)`;
     }
     return "Origen: Espana u otro confirmado";
   }
@@ -94,6 +101,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [loadingLabel, setLoadingLabel] = useState("Comprobando...");
   const [result, setResult] = useState<ScanResult | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [photo, setPhoto] = useState<File | null>(null);
   const [copied, setCopied] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -132,6 +140,7 @@ export default function HomePage() {
     if (!codeToUse) return;
     setLoading(true);
     setFeedbackSent(false);
+    setApiError(null);
     setLoadingLabel("Consultando Open Food Facts...");
     setResult(null);
     const t = setTimeout(() => setLoadingLabel("Consultando 8 supermercados en paralelo..."), 900);
@@ -141,9 +150,19 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ barcode: codeToUse, productName }),
       });
-      const data: ScanResult = await res.json();
-      setResult(data);
-      pushHistory(data);
+      if (!res.ok) {
+        setApiError("No se pudo comprobar el origen (error del servidor). Intentalo de nuevo.");
+        return;
+      }
+      const data = await res.json();
+      if (!data || typeof data !== "object" || !data.evidence) {
+        setApiError("Respuesta incompleta del servidor. Intentalo de nuevo.");
+        return;
+      }
+      setResult(data as ScanResult);
+      pushHistory(data as ScanResult);
+    } catch {
+      setApiError("No se pudo conectar. Comprueba tu conexion e intentalo de nuevo.");
     } finally {
       clearTimeout(t);
       setLoading(false);
@@ -160,6 +179,7 @@ export default function HomePage() {
       formData.append("barcode", barcode);
       const res = await fetch("/api/ocr", { method: "POST", body: formData });
       const data = await res.json();
+      if (!data?.evidence) return;
       setResult((prev) =>
         prev
           ? {
@@ -207,7 +227,8 @@ export default function HomePage() {
 
   async function handleShare() {
     if (!result) return;
-    const text = `OrigenLegit — ${verdictTitle(result)}\nCodigo: ${result.barcode}\nFuente: ${result.evidence.source} (confianza ${Math.round(result.evidence.confidence * 100)}%)`;
+    const ev = safeEvidence(result);
+    const text = `OrigenLegit — ${verdictTitle(result)}\nCodigo: ${result.barcode}\nFuente: ${ev.source} (confianza ${Math.round(ev.confidence * 100)}%)`;
     if (navigator.share) {
       try {
         await navigator.share({ text });
@@ -266,7 +287,8 @@ export default function HomePage() {
     unknown: cart.filter((c) => c.verdict === "unknown").length,
   };
 
-  const mapCoords = result ? coordsFor(result.evidence.countryCode, result.evidence.countryLabel) : null;
+  const ev = result ? safeEvidence(result) : null;
+  const mapCoords = ev ? coordsFor(ev.countryCode, ev.countryLabel) : null;
 
   return (
     <main className="container">
@@ -336,7 +358,9 @@ export default function HomePage() {
         {loading ? loadingLabel : "Comprobar origen"}
       </button>
 
-      {result && (
+      {apiError && <p className="error-text">{apiError}</p>}
+
+      {result && ev && (
         <div className="result">
           <span className={`pill pill-${result.verdict}`}>
             {result.verdict === "unknown" ? "Sin datos" : result.verdict === "green" ? "Confirmado" : result.verdict}
@@ -346,18 +370,12 @@ export default function HomePage() {
           <div className="confidence-bar">
             <div
               className={`confidence-fill fill-${result.verdict}`}
-              style={{ width: `${Math.round(result.evidence.confidence * 100)}%` }}
+              style={{ width: `${Math.round(ev.confidence * 100)}%` }}
             />
           </div>
-          <p className="meta">Confianza {Math.round(result.evidence.confidence * 100)}%</p>
+          <p className="meta">Confianza {Math.round(ev.confidence * 100)}%</p>
 
-          {mapCoords && (
-            <OriginMap
-              lat={mapCoords[0]}
-              lng={mapCoords[1]}
-              label={result.evidence.countryLabel || result.evidence.countryCode}
-            />
-          )}
+          {mapCoords && <OriginMap lat={mapCoords[0]} lng={mapCoords[1]} label={ev.countryLabel || ev.countryCode} />}
 
           {result.detectedChain && (
             <div className="chain-block">
@@ -371,8 +389,8 @@ export default function HomePage() {
 
           <details className="details-block">
             <summary>Ver detalles</summary>
-            <p className="meta">Fuente: {result.evidence.source}</p>
-            {result.evidence.rawText && <p className="quote">{result.evidence.rawText}</p>}
+            <p className="meta">Fuente: {ev.source}</p>
+            {ev.rawText && <p className="quote">{ev.rawText}</p>}
           </details>
 
           <div className="result-actions">

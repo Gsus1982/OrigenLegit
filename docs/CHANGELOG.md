@@ -1,36 +1,23 @@
 # Changelog
 
+## [0.6.1] - 2026-09-13
+### Corregido (CRITICO)
+- El scraper hacia fallback de busqueda de origen sobre el texto completo
+  de la pagina cuando no encontraba el selector especifico de producto.
+  Esto causo un caso real en produccion: un producto de Marruecos
+  (Hacendado, Pinchos de Anchoa) fue marcado como "Origen: Espana" porque
+  el texto se extrajo de contenido generico (no del producto) en la pagina
+  de La Despensa. Eliminado el fallback: si no hay selector especifico, no
+  se genera evidencia.
+- La respuesta de cache en `/api/scan` devolvia las columnas planas de la
+  base de datos en vez de un objeto `evidence` anidado, causando un crash
+  total de la app ("Application error") en escaneos repetidos del mismo
+  producto dentro de los 30 dias de cache.
+- Se anadio manejo defensivo en el frontend: cualquier respuesta
+  inesperada del backend ahora muestra un mensaje de error en vez de
+  romper la aplicacion.
+- Se elimino manualmente de la base de datos el dato incorrecto ya
+  guardado para el codigo 8480000603203.
+
 ## [0.6.0] - 2026-09-12
-### Anadido
-- Modo carro: escaneo continuo con reapertura automatica de la camara y
-  resumen en vivo (recuento rojo/naranja/verde/sin datos) de la sesion.
-- Feedback rapido "Es correcto?" (Si/No) por resultado, guardado en la nueva
-  tabla `feedback` de la base de datos.
-- Exportar historial a CSV.
-- Aviso de "fruta o verdura fresca" con nota sobre el etiquetado obligatorio
-  de origen en frescos.
-- Vibracion corta al detectar un codigo de barras con la camara.
-- Mapa de contexto (OpenStreetMap via Leaflet) mostrando el pais detectado,
-  cargado de forma perezosa (dynamic import) solo cuando hay coordenadas
-  conocidas, sin afectar el tiempo de carga inicial.
-- Barra de confianza visual bajo el veredicto.
-- Seccion "Ver detalles" plegable.
-- Bloque separado visualmente para la cadena donde se vende el producto.
-- Estado vacio para el historial.
-- Aviso legal fijo al pie de la app.
-
-### Cambiado
-- El titulo del veredicto tiene mas peso tipografico.
-
-## [0.5.0] - 2026-09-12
-### Corregido
-- Bug critico de clasificacion de paises no previstos.
-### Anadido
-- Historial local, boton compartir, modo oscuro, icono PWA.
-
-## [0.4.0] - 2026-09-12
-### Anadido
-- Deteccion automatica de cadena (8 supermercados en paralelo).
-
-## [0.3.1] / [0.3.0] / [0.2.0] / [0.1.0]
-Ver commits anteriores para el detalle.
+Modo carro, feedback, CSV, mapa OSM, mejoras UX. Ver commits anteriores.
