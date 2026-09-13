@@ -1,8 +1,13 @@
 // lib/originEngine.ts
-// Motor de decision: combina las 3 fuentes y calcula un veredicto ponderado.
+// Motor de decision: combina las fuentes y calcula un veredicto ponderado.
 // El prefijo de codigo de barras NUNCA decide por si solo un "rojo".
+//
+// v0.6.2: se separa "structured" (datos JSON-LD de la propia ficha de
+// producto) de "scrape" (texto libre por selectores CSS, menos fiable).
+// La confianza de "scrape" se rebaja de 0.9 a 0.6 hasta que los selectores
+// de cada cadena esten verificados manualmente contra el HTML real.
 
-export type Source = "openfoodfacts" | "scrape" | "ocr" | "barcode_prefix";
+export type Source = "openfoodfacts" | "structured" | "scrape" | "ocr" | "barcode_prefix";
 export type Verdict = "red" | "orange" | "green" | "unknown";
 
 export interface Evidence {
@@ -16,10 +21,11 @@ export interface Evidence {
 const MOROCCO_REGEX = /marruecos|maroc|morocco|\bma\b/i;
 const SAHARA_REGEX = /sahara occidental|western sahara|\beh\b|dakhla|laayoune|el aai[uu]n/i;
 const SPAIN_REGEX = /espa[nn]a|spain|\bes\b/i;
-const GENERIC_COUNTRY_REGEX = /(?:origen|elaborado en|envasado en|pa[ii]s de origen)[:\s]+([a-zA-ZÀ-ÿ\s]{3,40})/i;
+const GENERIC_COUNTRY_REGEX = /(?:origen|elaborado en|envasado en|pa[ii]s de origen|country of origin)[:\s]+([a-zA-ZÀ-ÿ\s]{3,40})/i;
 
 const SOURCE_BASE_CONFIDENCE: Record<Source, number> = {
-  scrape: 0.9,
+  scrape: 0.6,
+  structured: 0.8,
   openfoodfacts: 0.85,
   ocr: 0.75,
   barcode_prefix: 0.25,
@@ -40,8 +46,8 @@ export function buildEvidence(source: Source, rawText: string): Evidence {
   const { countryCode, countryLabel, verdict } = classifyText(rawText);
   const confidence = SOURCE_BASE_CONFIDENCE[source];
 
-  if (source === "barcode_prefix" && verdict === "red") {
-    return { source, rawText, countryCode, confidence: 0.2 };
+  if ((source === "barcode_prefix" || source === "scrape") && verdict === "red") {
+    return { source, rawText, countryCode, confidence: source === "barcode_prefix" ? 0.2 : confidence };
   }
   return { source, rawText, countryCode, countryLabel, confidence };
 }

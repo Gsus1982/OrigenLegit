@@ -1,12 +1,7 @@
 // lib/sources/supermarketScraper.ts
-// Escaneo automatico de varias cadenas. IMPORTANTE (fix v0.6.1): ya NO se
-// hace fallback de busqueda sobre el body completo de la pagina. Si no se
-// encuentra el selector especifico de ficha de producto, se descarta sin
-// evidencia, en vez de arriesgar un falso positivo con texto generico de la
-// pagina (pie de pagina, avisos legales, direcciones de empresa, etc).
-// Este fallback causo un caso real: un producto de Marruecos fue marcado
-// como "Origen: Espana" por un texto ajeno al producto en una pagina de
-// busqueda de La Despensa.
+// v0.6.2: se prueba primero JSON-LD (datos estructurados de la propia
+// ficha de producto, mas fiable) y solo si no existe se cae a buscar el
+// texto de origen dentro de un selector especifico de descripcion.
 //
 // Family Cash queda fuera: no tiene tienda online.
 
@@ -30,7 +25,7 @@ export const SUPERMARKETS: ChainConfig[] = [
   { id: "ladespensa", label: "La Despensa", searchUrl: (q) => `https://www.despensa.es/search?q=${encodeURIComponent(q)}` },
 ];
 
-const ORIGIN_LINE_REGEX = /(origen|elaborado en|envasado en|pa[ii]s de origen)[:\s]+([^.\n|]+)/i;
+const ORIGIN_LINE_REGEX = /(origen|elaborado en|envasado en|pa[ii]s de origen|country of origin)[:\s]+([^.\n|]+)/i;
 
 const PRODUCT_SELECTORS =
   "[data-testid='product-description'], .product-description, .ficha-producto, .pdp-description, [data-testid='product-detail'], .product-detail__description";
@@ -44,10 +39,49 @@ async function fetchHtml(url: string): Promise<string> {
   return res.text();
 }
 
+function extractFromJsonLd(html: string): string | null {
+  const $ = cheerio.load(html);
+  const scripts = $('script[type="application/ld+json"]');
+
+  for (let i = 0; i < scripts.length; i++) {
+    const raw = $(scripts[i]).text();
+    if (!raw) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    const items = Array.isArray(parsed) ? parsed : [parsed];
+
+    for (const item of items) {
+      if (!item || typeof item !== "object") continue;
+      const obj = item as Record<string, unknown>;
+      const type = obj["@type"];
+      const isProduct = type === "Product" || (Array.isArray(type) && type.includes("Product"));
+      if (!isProduct) continue;
+
+      if (typeof obj.countryOfOrigin === "string") return `Origen: ${obj.countryOfOrigin}`;
+      if (typeof obj.origin === "string") return `Origen: ${obj.origin}`;
+
+      if (typeof obj.description === "string") {
+        const match = obj.description.match(ORIGIN_LINE_REGEX);
+        if (match) return `${match[1]}: ${match[2]}`.trim();
+      }
+    }
+  }
+  return null;
+}
+
 async function scrapeOne(chain: ChainConfig, productName: string): Promise<{ chain: ChainConfig; evidence: Evidence } | null> {
   const html = await fetchHtml(chain.searchUrl(productName));
-  const $ = cheerio.load(html);
 
+  const structuredMatch = extractFromJsonLd(html);
+  if (structuredMatch) {
+    return { chain, evidence: buildEvidence("structured", structuredMatch) };
+  }
+
+  const $ = cheerio.load(html);
   const candidateText = $(PRODUCT_SELECTORS).text().trim();
   if (!candidateText) return null;
 
